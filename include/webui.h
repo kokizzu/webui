@@ -424,6 +424,7 @@ WEBUI_EXPORT bool webui_set_default_root_folder(const char* path);
 /**
  * @brief Set a custom handler to serve files. This custom handler should
  * return full HTTP header and body.
+ * This deactivates any previous handler set with `webui_set_file_handler_window`
  *
  * @param window The window number
  * @param handler The handler function: `void myHandler(const char* filename,
@@ -432,6 +433,20 @@ WEBUI_EXPORT bool webui_set_default_root_folder(const char* path);
  * @example webui_set_file_handler(myWindow, myHandlerFunction);
  */
 WEBUI_EXPORT void webui_set_file_handler(size_t window, const void* (*handler)(const char* filename, int* length));
+
+/**
+ * @brief Set a custom handler to serve files. This custom handler should
+ * return full HTTP header and body.
+ * This deactivates any previous handler set with `webui_set_file_handler`
+ *
+ * @param window The window number
+ * @param handler The handler function: `void myHandler(size_t window, const char* filename,
+ * int* length)`
+ *
+ * @example webui_set_file_handler_window(myWindow, myHandlerFunction);
+ */
+WEBUI_EXPORT void webui_set_file_handler_window(size_t window, const void* (*handler)(size_t window, const char* filename, int* length));
+
 
 /**
  * @brief Check if the specified window is still running.
@@ -551,6 +566,17 @@ WEBUI_EXPORT void webui_set_hide(size_t window, bool status);
  * @example webui_set_size(myWindow, 800, 600);
  */
 WEBUI_EXPORT void webui_set_size(size_t window, unsigned int width, unsigned int height);
+
+/**
+ * @brief Set the window minimum size.
+ *
+ * @param window The window number
+ * @param width The window width
+ * @param height The window height
+ *
+ * @example webui_set_minimum_size(myWindow, 800, 600);
+ */
+WEBUI_EXPORT void webui_set_minimum_size(size_t window, unsigned int width, unsigned int height);
 
 /**
  * @brief Set the window position.

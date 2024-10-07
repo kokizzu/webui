@@ -324,11 +324,15 @@ typedef struct _webui_window_t {
     int width;
     int height;
     bool size_set;
+    int minimum_width;
+    int minimum_height;
+    bool minimum_size_set;
     int x;
     int y;
     bool position_set;
     size_t process_id;
     const void*(*files_handler)(const char* filename, int* length);
+    const void*(*files_handler_window)(size_t window, const char* filename, int* length);
     webui_event_inf_t* events[WEBUI_MAX_IDS];
     size_t events_count;
     bool is_public;
@@ -735,7 +739,29 @@ void webui_set_file_handler(size_t window, const void*(*handler)(const char* fil
         return;
     _webui_window_t* win = _webui.wins[window];
 
+    // Set the new `files_handler`
     win->files_handler = handler;
+    // And reset any previous `files_handler_window`
+    win->files_handler_window = NULL;
+}
+
+void webui_set_file_handler_window(size_t window, const void*(*handler)(size_t window, const char* filename, int* length)) {
+
+    if (handler == NULL)
+        return;
+
+    // Initialization
+    _webui_init();
+
+    // Dereference
+    if (_webui_mutex_is_exit_now(WEBUI_MUTEX_NONE) || _webui.wins[window] == NULL)
+        return;
+    _webui_window_t* win = _webui.wins[window];
+
+    // Reset any previous `files_handler`
+    win->files_handler = NULL;
+    // And set `files_handler_window`
+    win->files_handler_window = handler;
 }
 
 bool webui_script_client(webui_event_t* e, const char* script, size_t timeout,
@@ -2495,6 +2521,32 @@ void webui_set_size(size_t window, unsigned int width, unsigned int height) {
     }
 }
 
+void webui_set_minimum_size(size_t window, unsigned int width, unsigned int height) {
+
+    #ifdef WEBUI_LOG
+    printf("[User] webui_set_minimum_size(%zu, %u, %u)\n", window, width, height);
+    #endif
+
+    // Initialization
+    _webui_init();
+
+    // Dereference
+    if (_webui_mutex_is_exit_now(WEBUI_MUTEX_NONE) || _webui.wins[window] == NULL)
+        return;
+    _webui_window_t* win = _webui.wins[window];
+
+    if (width < WEBUI_MIN_WIDTH || width > WEBUI_MAX_WIDTH || height < WEBUI_MIN_HEIGHT ||
+        height > WEBUI_MAX_HEIGHT) {
+
+        win->minimum_size_set = false;
+        return;
+    }
+
+    win->minimum_width = width;
+    win->minimum_height = height;
+    win->minimum_size_set = true;
+}
+
 void webui_set_position(size_t window, unsigned int x, unsigned int y) {
 
     #ifdef WEBUI_LOG
@@ -4170,8 +4222,7 @@ static int _webui_external_file_handler(_webui_window_t* win, struct mg_connecti
     const struct mg_request_info * ri = mg_get_request_info(client);
     const char* url = ri->local_uri;
 
-    if (win->files_handler != NULL) {
-
+    if (win->files_handler != NULL || win->files_handler_window != NULL) {
         // Get file content from the external files handler
         size_t length = 0;
 
@@ -4195,7 +4246,10 @@ static int _webui_external_file_handler(_webui_window_t* win, struct mg_connecti
         printf("[Core]\t\t_webui_external_file_handler() -> Calling custom files handler callback\n");
         printf("[Call]\n");
         #endif
-        const void* callback_resp = win->files_handler(url, (int*)&length);
+
+        // True if we pass the window num to the handler, false otherwise.
+        int is_file_handler_window = win->files_handler_window != NULL;
+        const void* callback_resp = is_file_handler_window ? win->files_handler_window(win->num, url, (int*)&length) : win->files_handler(url, (int*)&length);
 
         if (callback_resp != NULL) {
 
@@ -7924,7 +7978,7 @@ static int _webui_http_handler(struct mg_connection* client, void * _win) {
                 _webui_http_send(win, client, "application/javascript", "", 0, false);
             }
         }
-        else if ((win->files_handler != NULL) && (_webui_external_file_handler(win, client, client_id) != 0)) {
+        else if ((win->files_handler != NULL || (win->files_handler_window != NULL)) && (_webui_external_file_handler(win, client, client_id) != 0)) {
 
             // File already handled by the custom external file handler
             // nothing to do now.
@@ -10211,6 +10265,15 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
                     }
                 }
                 break;
+            case WM_GETMINMAXINFO:
+            	if (win) {
+					if (win->minimum_size_set) {
+						LPMINMAXINFO lpMMI = (LPMINMAXINFO)lParam;
+						lpMMI->ptMinTrackSize.x = win->minimum_width;
+						lpMMI->ptMinTrackSize.y = win->minimum_height;
+					}
+				}
+				break;
             case WM_CLOSE:
                 if (win) {
                     // Stop the WebView thread, close the window
@@ -10422,7 +10485,8 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
         wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
         wc.cbClsExtra = 0;
         wc.cbWndExtra = 0;
-        wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);
+        wc.hIcon = LoadIcon(GetModuleHandle(NULL) ,MAKEINTRESOURCE(101));	// default user icon resouce : 101
+        if(!wc.hIcon) wc.hIcon = LoadIcon(NULL, IDI_APPLICATION);			// if not existed, use system default icon
 
         if (!RegisterClassA(&wc) && GetLastError() != ERROR_CLASS_ALREADY_EXISTS) {
             _webui_wv_free(win->webView);
@@ -10437,6 +10501,13 @@ BOOL WINAPI DllMain(HINSTANCE hinstDLL, DWORD fdwReason, LPVOID lpReserved) {
             win->webView->width, win->webView->height,
             NULL, NULL, GetModuleHandle(NULL), NULL
         );
+
+       	{	// window size correction
+       		RECT rc;
+       		GetClientRect(win->webView->hwnd, &rc);
+       		win->webView->width	= rc.right - rc.left;
+       		win->webView->height = rc.bottom - rc.top;
+       	}
 
         if (!win->webView->hwnd) {
             _webui_wv_free(win->webView);

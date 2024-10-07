@@ -263,6 +263,11 @@ namespace webui {
             webui_set_size(webui_window, width, height);
         }
 
+        // Set window minimum size (currently windows only.)
+        void set_minimum_size(unsigned int width, unsigned int height) const {
+        	webui_set_minimum_size(webui_window, width, height);
+        }
+
         // Get the network port of a running window. This can be useful to determine the HTTP link of `webui.js`
         size_t get_port() const {
             return webui_get_port(webui_window);
@@ -304,8 +309,15 @@ namespace webui {
         }
 
         // Set a custom handler to serve files. This custom handler should return full HTTP header and body.
+        // Resets previous handler set with `set_file_handler_window`.
         void set_file_handler(const void* (*handler)(const char* filename, int* length)) const {
             webui_set_file_handler(webui_window, handler);
+        }
+
+        // Set a custom handler to serve files. This custom handler should return full HTTP header and body.
+        // Resets previous handler set with `set_file_handler`
+        void set_file_handler_window(const void* (*handler)(size_t window, const char* filename, int* length)) const {
+            webui_set_file_handler_window(webui_window, handler);
         }
 
         // Set the web browser profile to use. An empty `name` and `path` means the default user profile. Need
